@@ -1,11 +1,7 @@
-# scutoid
+# polygonal scutoid
 
-This is a project that is primarily in meatspace, but requires some scripts to figure out 
+A scutoid is a shape that occurs in a layer of cells or epithemial. Usually these cells have a prisma shape, but when the layer of cells is curved sometimes.
+I saw a few educational youtube video's on the subject, and there seemed to be different models published, but no model(s) seemd to be able to tile a surface 
+and have similar shapes. The shape is a voronooi cell. See the included picture for more information.
 
-every face of the scutoid share the home seed and another seed or plane.
-every corner of the face shares two other constraints.
-not every combination of constraints is a corner
-Every edge of the scutoid had three constraints
-these three constraints define a line and the end points of the edge are two corners.
-these corners have a fourth extra constraint
-there are many
+Also included are shapes to make a little puzzle.

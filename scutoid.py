@@ -9,13 +9,17 @@ from dataclasses import dataclass, astuple
 import gauss_solver
 
 POLYGON_START = np.array([0.0, 100.0])
-# POLYGON_START_ANGLE = 0.0
-POLYGON_SCALE = 2.0
 
+SETTINGS = {
+        'shift' : 0.9,
+        'grid'  : 10,
+        'part'  : 3.4,
+        'rize'  : 5.5
+    }
 # equidistance
 # find a point in plane that had equal distance to three different points
 # iteratively ? no. 
-#
+
 @dataclass
 class Point:
     x: float
@@ -40,7 +44,10 @@ class Plane:
     c:float
 
 
-LetteredPolyhedron = namedtuple("LetteredPolyhedron", "points faces")
+class UnfoldStage(Enum):
+    FLATTENED = 1
+    ROTATED = 2
+    NET = 3
 
 
 def distance_equation_vector(point):
@@ -56,6 +63,7 @@ def distance_equation_vector(point):
 def restraint_solver(*restraints):
     first_point = None
     matrix_lines = []
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~ restriant solver ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     for restraint in restraints:
         if isinstance(restraint, Point):
             if first_point is None:
@@ -67,11 +75,15 @@ def restraint_solver(*restraints):
                 matrix_lines.append(line)
         elif isinstance(restraint, Plane):
             matrix_lines.append(astuple(restraint))
-    print("matrix lines:", matrix_lines)
+        print(f"restraint_solver - restraint: {restraint}, lines: {matrix_lines}")
     matrix = np.array(matrix_lines)
     if(gauss_solver.gauss_solve(matrix)):
         return Point(*matrix[:, -1])
     else:
+        print("couldn't solve matrix.")
+        print(matrix)
+        for line in matrix_lines:
+            print(line)
         return None
     
 
@@ -88,16 +100,6 @@ def fold_flat_polygon(*points):
     fold_matrix = fold_flat_matrix(points[0], points[1], points[-1])
     points = points - points[0]
     return list([np.matmul(fold_matrix, point)for point in points])
-
-
-def gen_voronoi_face(*restraints):
-    first = restraints[0]
-    second = restraints[1]
-    rest = restraints[2:]
-    result = []
-    for rest1, rest2 in zip(rest, rest[1:] + rest[:1]):
-        result.append(restraint_solver(first, second, rest1, rest2))
-    return result
 
 
 def dist(point_1, point_2):
@@ -130,7 +132,7 @@ def find_rotation_matrix_with_goneometric_functions(point_2d, destination_2d):
 
 def find_rotation_matrix_with_gauss_solver(point_2d, destination_2d):
     matrix = np.array([[point_2d[0],  point_2d[1], destination_2d[0]],
-                                   [point_2d[1], -point_2d[0], destination_2d[1]]])
+                          [point_2d[1], -point_2d[0], destination_2d[1]]])
     result = gauss_solver.gauss_solve(matrix)
     print(matrix)
     sine = matrix[1, 2]
@@ -138,59 +140,106 @@ def find_rotation_matrix_with_gauss_solver(point_2d, destination_2d):
     return np.array([[cosine, sine], [-sine, cosine]])
 
 
+def plane_from_points(point_1, point_2, point_3):
+    print(f"plane from points - points: {point_1}, {point_2}, {point_3}")
+    plane_direction = np.cross(point_2 - point_1, point_3 - point_1)
+    print(f"plane from points - pre norm - plane_direction: {plane_direction}")
+    plane_direction /= np.linalg.norm(plane_direction)
+    print(f"plane from points - post_norm - plane_direction: {plane_direction}")
+    constant = np.inner(plane_direction, point_1)
+    return Plane(*plane_direction, constant)  # np.append(plane_direction, constant)
+
+
 def find_rotation_and_scale_matrix(point_2d, destination_2d):
     return find_rotation_matrix_with_gauss_solver(point_2d, destination_2d)
 
 
-def attach_polygon(anchor_0, anchor_1, corners):
-    flat_polygon = fold_flat_polygon(corners)
-    rotation_matrix = find_rotation_and_scale_matrix(anchor_1 - anchor_0, corners[1] - corners[0])
-    rotated_polygon = [np.matmul(rotation_matrix, corner) + anchor_0 for corner in corners]
-    # scale?
+def clockwise_edge(face, letters):
+    face_string = ''.join(face)
+    face_plus = face_string + face_string[0]
+    sequence = ''.join(letters)
+    if sequence in face_plus:
+        return letters
+    else:
+        return letters[::-1]
 
 
-def string_face(corners, adjacent_face, scutoid_points):
+def face_flat_adjacent(corners, adjacent_face, scutoid_points, stage=UnfoldStage.NET):
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ face_adjacent:", corners, "adjacent", ''.join(adjacent_face.keys()),"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     result = OrderedDict()
     for corner_letter in corners:
         result[corner_letter] = scutoid_points[corner_letter]
-    # fold flat
-    print(f'corners 3d: {result}')
     fold_matrix = fold_flat_matrix(result[corners[0]], result[corners[1]], result[corners[-1]])
     for corner in corners :
         result[corner] = np.matmul(fold_matrix, result[corner])
     print(f'corners folded flat: {result}')
-    anchor = result[corners[0]]
-    print(anchor)
-    # attach (to adjacent_face)
-    for corner in corners:
-        result[corner] -= anchor
-    print(f'corners transposed to origin: {result}')
+    if stage == UnfoldStage.FLATTENED:
+        return result    # for debugging
     common_corners = list(set(corners).intersection(adjacent_face))
     assert len(common_corners) == 2, f"Two faces {corners} and {adjacent_face} seem not to be adjacent."
     print(f"common corners: {common_corners}")
     # find the corner the face needs to rotate make to it fit
-    rotation_matrix = find_rotation_and_scale_matrix(result[common_corners[1]] - result[common_corners[0]],
-                                                    adjacent_face[common_corners[0]] - adjacent_face[common_corners[1]])
+    result_order = clockwise_edge(result, common_corners)
+    adjacent_order = clockwise_edge(adjacent_face, common_corners)
+    rotation_matrix = find_rotation_and_scale_matrix(
+        result[result_order[1]] - result[result_order[0]],
+        adjacent_face[adjacent_order[0]] - adjacent_face[adjacent_order[1]])
     # find the discance the face needs to move to make it fit
     print(f"rotation_matrix: {rotation_matrix}")
+    for corner in corners:
+        result[corner] = np.matmul(rotation_matrix, result[corner])
+    print(f"rotated faces: {result}")
+    if stage == UnfoldStage.ROTATED:
+        return result    # for debugging
     translation = adjacent_face[common_corners[0]] - result[common_corners[0]]
+    print(f" point:{common_corners[0]}, move from {result[common_corners[0]]} to{adjacent_face[common_corners[0]]}")
     print(f"translation: {translation}")
     for corner in corners:
-        result[corner] = np.matmul(rotation_matrix, result[corner]) + translation
+        result[corner] = result[corner] + translation
+    print(f"net: {result}")
     return result
 
 
-def scutoid1_alt():
-    center = Point(3, 0, 1)
-    opposite = Point(-3, 0, -1)
-    neighbour_1 = Point(0, 7, 1)
-    neighbour_2 = Point(10, 3, 1)
-    neighbour_3 = Point(10, -3 , -1)
-    triangle_neighbour = Point(7, -10, 1)
-    neighbour_4 = Point(0, -7,-1)
+def scale(points, factor):
+    for point in points.keys():
+        points[point] *=2
 
-    upper_plane = Plane(0, 0, 1, 10)
-    lower_plane = Plane(0, 0, 1, -10)
+
+def mirror(points, faces):
+    mirror_points = {}
+    for letter in points.keys():
+        mirror_point = points[letter]
+        mirror_point[0] = - mirror_point[0]
+        mirror_points[letter] = mirror_point
+    mirror_faces = []  # keep clockwise ordering
+    for face in faces:
+        mirror_faces.append(face[::-1])
+    return mirror_points, mirror_faces
+
+
+def z_flip(points, faces):
+    mirror_points = {}
+    for letter in points.keys():
+        mirror_point = points[letter]
+        mirror_point[2] = - mirror_point[2]
+        mirror_points[letter] = mirror_point
+    mirror_faces = []  # keep clockwise ordering
+    for face in faces:
+        mirror_faces.append(face[::-1])
+    return mirror_points, mirror_faces
+
+
+def scutoid1(shift=0.9, grid=10, part=3.4, rize=5.5):
+    center = Point(part, 0, shift)
+    opposite = Point(-part, 0, -shift)
+    neighbour_1 = Point(0, grid - part, shift)
+    neighbour_2 = Point(grid, part, shift)
+    neighbour_3 = Point(grid, -part , -shift)
+    triangle_neighbour = Point(grid - part, -grid, shift)
+    neighbour_4 = Point(0, part - grid, -shift)
+
+    upper_plane = Plane(0, 0, 1, rize)
+    lower_plane = Plane(0, 0, 1, -rize)
 
     points = {}
     points['a'] = restraint_solver(center, upper_plane, opposite, neighbour_1).get_array()
@@ -206,18 +255,110 @@ def scutoid1_alt():
     points['k'] = restraint_solver(center, lower_plane, neighbour_3, neighbour_4).get_array()
     points['l'] = restraint_solver(center, lower_plane, neighbour_4, opposite).get_array()
 
-    faces = ["lkgef", "hlfa", "ihab", "jibc", "kjcdg", "gde", "fedcba", "klhij"]
+    faces = ["lkgef", "hlfa", "ihab", "ibcj", "kjcdg", "gde", "fedcba", "klhij"]
 
-    net_init = OrderedDict()
-    net_init['l'] = np.array([0.0, 0.0])
-    net_init['f'] = np.array([10.0, 0.0])
-
-    first_face = string_face("lkgef", net_init, points)
-    print (first_face)
+    return points, faces
 
 
-# stappen
-# reken de vlakken uit met de hoekpunten
-# teken het eerste vlak
-#    reken de punten om naar papier coordinaten
-#    onthoud de rand voor nieuwe papier coordinaten voor nieuw vlak  
+def puzzle_piece(shift=0.9, grid=10, part=3.4, rize=5.5):
+    # similar to the scutoid function but with less faces and a cut off plane
+    # the cut off plane is from a differen scutoid, so we have to
+    # calculate some of its points as well
+
+    center = Point(part, 0, shift)
+    opposite = Point(-part, 0, -shift)
+    far = Point(-grid, -part, -shift)
+    upper_plane = Plane(0, 0, 1, rize)
+    lower_plane = Plane(0, 0, 1, -rize)
+    neighbour_4 = Point(0, part - grid, -shift)
+
+    # Calculate the plane that cuts of the part
+    low_far_plane_point = restraint_solver(lower_plane, far, opposite, neighbour_4).get_array()
+    low_close_plane_point = restraint_solver(lower_plane, center, opposite, neighbour_4).get_array()
+    high_close_plane_point = restraint_solver(upper_plane, center, opposite, neighbour_4).get_array()
+
+    border_plane = plane_from_points(low_far_plane_point, low_close_plane_point, high_close_plane_point)
+    print(f"border_plane: {border_plane}")
+
+    neighbour_1 = Point(0, grid - part, shift)
+    neighbour_2 = Point(grid, part, shift)
+
+    triangle_neighbour = Point(grid - part, -grid, shift)
+
+    points = {}
+    points['a'] = restraint_solver(center, upper_plane, opposite, neighbour_1).get_array()
+    points['b'] = restraint_solver(center, upper_plane, neighbour_1, neighbour_2).get_array()
+    points['c'] = restraint_solver(center, upper_plane, neighbour_2, border_plane).get_array()
+    points['d'] = restraint_solver(center, upper_plane, border_plane, opposite).get_array()
+
+    points['e'] = restraint_solver(center, lower_plane, opposite, neighbour_1).get_array()
+    points['f'] = restraint_solver(center, lower_plane, neighbour_1, neighbour_2).get_array()
+    points['g'] = restraint_solver(center, lower_plane, neighbour_2, border_plane).get_array()
+    points['h'] = restraint_solver(center, lower_plane, border_plane, opposite).get_array()
+
+    faces = ["adhe", "baef", "cbfg", "dcgh", "abcd", "hgfe"]
+
+    return points, faces
+
+
+def calculate_corner(shift=0.9, grid=10, part=3.4, rize=5.5):
+    # a lot of code borrowed from puzzle_piece
+
+    center = Point(part, 0, shift)
+    opposite = Point(-part, 0, -shift)
+    far = Point(-grid, -part, -shift)
+    upper_plane = Plane(0, 0, 1, rize)
+    lower_plane = Plane(0, 0, 1, -rize)
+    neighbour_4 = Point(0, part - grid, -shift)
+
+    # Calculate the plane that cuts of the part
+    low_far_plane_point = restraint_solver(lower_plane, far, opposite, neighbour_4).get_array()
+    low_close_plane_point = restraint_solver(lower_plane, center, opposite, neighbour_4).get_array()
+    high_close_plane_point = restraint_solver(upper_plane, center, opposite, neighbour_4).get_array()
+
+    border_plane = plane_from_points(low_far_plane_point, low_close_plane_point, high_close_plane_point)
+    print(f"border_plane: {border_plane}")
+
+    neighbour_2 = Point(grid, part, shift)
+
+    corner = restraint_solver(center, upper_plane, neighbour_2, border_plane).get_array()
+
+    return corner[0], corner[1]
+
+
+def puzzle_border(shift=0.9, grid=10, part=3.4, rize=5.5, border_width = 3.0, margin = 1.2):
+    corner_x, corner_y = calculate_corner(shift=shift, grid=grid, part=part, rize=rize)
+    print(f"corner_x: {corner_x}, corner_y: {corner_y}")
+    other_corner_x = -grid + corner_y
+    other_corner_y = -corner_x
+    side = math.sqrt((corner_x - other_corner_x) ** 2 + (corner_y - other_corner_y) ** 2) + margin
+    print(f"side: {side}")
+    points = {}
+    points['a'] = np.array([0., 0., 0.])
+    points['b'] = np.array([0., side, 0.])
+    points['c'] = np.array([side, side, 0.])
+    points['d'] = np.array([side, 0., 0.])
+
+    points['e'] = np.array([-border_width, -border_width, 0.0])
+    points['f'] = np.array([-border_width, side + border_width, 0.0])
+    points['g'] = np.array([side + border_width, side + border_width, 0.0])
+    points['h'] = np.array([side + border_width, -border_width, 0.0])
+
+    for low, high in zip('abcdefgh', 'ijklmnop'):
+        points[high] = np.array([*points[low][:-1], 2 * rize])
+
+    faces = ['feab', 'bfgc', 'cghd', 'daeh',
+             'aijb', 'bjkc', 'ckld', 'dlia',
+             'imnj', 'jnok', 'kopl', 'lpmi',
+             'nmef', 'onfg', 'pogh', 'mphe'
+             ]
+
+    return points, faces
+
+
+def find_adjacent_face(face, potential_neighbours):
+    face_set = set(face)
+    for neighbour in potential_neighbours:
+        if len(face_set.intersection(neighbour)) == 2:
+            return neighbour
+    return None
