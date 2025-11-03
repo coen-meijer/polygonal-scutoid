@@ -43,10 +43,13 @@ def gen_mesh(points, faces, filename):
 def main():
 #    points, faces = scutoid.z_flip(*scutoid.scutoid1(**SETTINGS))
 #    points, faces = scutoid.z_flip(*scutoid.puzzle_piece(**SETTINGS))
+    for setting in SETTINGS:
+        SETTINGS[setting] *= 2
     points, faces = scutoid.puzzle_border(**SETTINGS)
 #    mirror_points, mirror_faces = mirror_puzzle_peice = scutoid.mirror(points, faces)
-    scutoid.scale(points, 2.0)
-    gen_mesh(points, faces, os.path.join(PATH, f'scutoid-{SETTINGS["shift"]}-{SETTINGS["grid"]}-{SETTINGS["part"]}-{SETTINGS["rize"]}.stl'))
+#    scutoid.scale(points, 2.0)
+    filename = f'puzzzleborder-{SETTINGS["shift"]}-{SETTINGS["grid"]}-{SETTINGS["part"]}-{SETTINGS["rize"]}.stl'
+    gen_mesh(points, faces, os.path.join(PATH, filename))
 
 
 if __name__ == "__main__":
