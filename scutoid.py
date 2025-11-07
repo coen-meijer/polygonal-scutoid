@@ -165,7 +165,7 @@ def clockwise_edge(face, letters):
 
 
 def face_flat_adjacent(corners, adjacent_face, scutoid_points, stage=UnfoldStage.NET):
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ face_adjacent:", corners, "adjacent", ''.join(adjacent_face.keys()),"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~ face_adjacent:", corners, "adjacent", ''.join(adjacent_face.keys()),"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     result = OrderedDict()
     for corner_letter in corners:
         result[corner_letter] = scutoid_points[corner_letter]

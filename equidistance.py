@@ -86,7 +86,7 @@ def distance_equation_vector(point):
     # the distance to one point to the distance to another
 
     constant = point.x * point.x + point.y * point.y + point.z * point.z
-    return np.array([point.x * - 2.0, point.y * -2.0, point.z * -2.0, constant])
+    return np.array([point.x * -2.0, point.y * -2.0, point.z * -2.0, constant])
 
 
 def restraint_solver(*restraints):
@@ -109,7 +109,7 @@ def restraint_solver(*restraints):
         return Point(*matrix[:, -1])
     else:
         return None
-                
+
 
 def test_gauss_solver():
     matrix = np.array([2.0, 3.0, 6.0, 4.0, 9.0, 15.0]).reshape(2,3)

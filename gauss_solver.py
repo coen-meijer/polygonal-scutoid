@@ -1,5 +1,7 @@
 import numpy as np
 
+# so this does about the same as numpy.linalg.solve but i already made it so i thought i would use it.
+
 def pivot_succes(matrix, column):
     index_largest = column
     maximum = abs(matrix[column, column])
